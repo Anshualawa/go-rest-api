@@ -14,12 +14,13 @@ func main() {
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
+	u := new(utly.User)
+
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Welcome to Echo with Middlewre!")
 	})
 
 	e.POST("/user", func(c echo.Context) error {
-		u := new(utly.User)
 		if err := c.Bind(u); err != nil {
 			return err
 		}

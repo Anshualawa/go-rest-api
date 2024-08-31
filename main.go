@@ -1,13 +1,10 @@
 package main
 
-//AIzaSyCXiA8lbT_9bYhUwjRCi_bADZ0j0Djdjwg
-
 import (
 	"context"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	mystruct "github.com/Anshualawa/go-rest-api/util"
 	"github.com/gin-gonic/gin"
@@ -23,11 +20,22 @@ type MyPrompt struct {
 }
 
 func main() {
+
 	e := echo.New()
 
+	// Middleware to log requests and recover from panics
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
+	// Configure CORS middleware
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins:     []string{"http://localhost:5173"},                                                                // Allow your frontend origin
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions}, // Allowed methods
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},                                    // Allowed headers
+		AllowCredentials: true,                                                                                             // Allow credentials like cookies
+	}))
+
+	// Basic welcome route
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Welcome to the Go REST API: Fast, Simple, and Built to Scale—Your Data’s New Best Friend!")
 	})
@@ -35,7 +43,6 @@ func main() {
 	// CMS Start
 	user := []mystruct.User{} // Store Data from POST Method
 	var empid int64 = 20243100
-
 	cu := new(mystruct.User)
 
 	e.GET("/cms-user", func(c echo.Context) error {
@@ -43,7 +50,6 @@ func main() {
 	})
 
 	e.POST("/cms-user", func(c echo.Context) error {
-
 		if err := c.Bind(cu); err != nil {
 			return err
 		}
@@ -72,40 +78,39 @@ func main() {
 	})
 	// CMS End
 
-	// chat with myAI
+	// AI Chat Route
 	e.POST("/ai-chat", func(c echo.Context) error {
 		var prt MyPrompt
 		err := c.Bind(&prt)
 		if err != nil {
 			fmt.Println("Error binding JSON:", err)
 			return c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Prompt"})
-
 		}
+
 		// AI Gemini connection
 		ctx := context.Background()
-
-		client, err := genai.NewClient(ctx, option.WithAPIKey(os.Getenv("myKey")))
+		client, err := genai.NewClient(ctx, option.WithAPIKey("AIzaSyCXiA8lbT_9bYhUwjRCi_bADZ0j0Djdjwg"))
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer client.Close()
+
 		model := client.GenerativeModel("gemini-1.5-flash")
 		model.GenerationConfig = genai.GenerationConfig{
 			ResponseMIMEType: "application/json",
 		}
-
 		resp, err := model.GenerateContent(ctx, genai.Text(prt.Prompt))
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"Gemini Error": err})
+			return c.JSON(http.StatusNotFound, gin.H{"Gemini Error": err.Error()})
 		}
 
 		data := aiResponse(resp)
 
 		return c.JSON(http.StatusOK, gin.H{"Gemini response": data})
-
 	})
-	e.Logger.Fatal(e.Start(":8080"))
 
+	// Start server on port 8080
+	e.Logger.Fatal(e.Start(":8080"))
 }
 
 func aiResponse[T any](prmtResp T) T {

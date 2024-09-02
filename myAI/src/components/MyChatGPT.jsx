@@ -1,76 +1,103 @@
-import { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 const MyChatGPT = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const chatContainerRef = useRef(null);
 
   // Handle input change
-  const handleInputChange = (e) => {
-    setInput(e.target.value);
-  };
+  const handleInputChange = (e) => setInput(e.target.value);
 
   // Handle form submit to send a message
   const handleFormSubmit = async (e) => {
     e.preventDefault();
-
     if (input.trim() === '') return;
 
-    // Add the user message to the chat
-    setMessages((prev) => [...prev, { sender: 'User', text: input }]);
-    setInput(''); // Clear input field
-    setLoading(true); // Set loading to true while fetching response
+    setMessages(prev => [...prev, { sender: 'User', text: input }]);
+    setInput('');
+    setLoading(true);
 
     try {
       const response = await fetch('http://localhost:8080/ai-chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: input }),
       });
 
-      const data = await response.json();
+      if (!response.ok) throw new Error('Network response was not ok');
 
-      // Log the response to inspect its structure
-      console.log('AI Response:', data);
+      const responseText = await response.text();
+      let parsedContent;
 
-      // Add AI response to the chat, displaying unknown fields dynamically
-      setMessages((prev) => [
-        ...prev,
-        { sender: 'AI', text: data }, // Store the entire response for rendering
-      ]);
-    } catch (error) {
-      console.error('Error fetching AI response:', error);
-      setMessages((prev) => [
-        ...prev,
-        { sender: 'AI', text: 'Error fetching response.' },
-      ]);
+      try {
+        parsedContent = JSON.parse(responseText);
+      } catch {
+        parsedContent = 'Error parsing response.';
+      }
+
+      if (parsedContent?.AIResponse) {
+        const aiResponseContent = parsedContent.AIResponse[0]?.Content?.Parts[0];
+        try {
+          parsedContent = JSON.parse(aiResponseContent);
+        } catch {
+          parsedContent = aiResponseContent;
+        }
+      }
+
+      setMessages(prev => [...prev, { sender: 'AI', text: parsedContent }]);
+    } catch {
+      setMessages(prev => [...prev, { sender: 'AI', text: 'Error fetching response.' }]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false); // Set loading to false after the response is received
   };
 
-  // Function to render message content dynamically
+  // Scroll to the bottom of the chat container whenever messages change
+  useEffect(() => {
+    chatContainerRef.current?.scrollTo(0, chatContainerRef.current.scrollHeight);
+  }, [messages]);
+
   const renderMessageContent = (message) => {
-    if (typeof message.text === 'object') {
-      // Handle case where message text is an object (unknown structure)
-      return (
-        <div className="text-left">
-          {Object.entries(message.text).map(([key, value], index) => (
-            <p key={index} className="text-sm">
-              <strong>{key}:</strong> {JSON.stringify(value)}
-            </p>
-          ))}
-        </div>
-      );
+    if (typeof message.text === 'string') {
+      try {
+        const jsonObject = JSON.parse(message.text);
+        return renderObjectContent(jsonObject);
+      } catch {
+        return <p>{message.text}</p>;
+      }
     }
-    // Handle case where message text is a simple string
-    return <p>{message.text}</p>;
+
+    return renderObjectContent(message.text) || <p>{message.text}</p>;
+  };
+
+  const renderObjectContent = (obj) => {
+    if (typeof obj !== 'object' || obj === null) return <p>{obj}</p>;
+
+    return (
+      <div>
+        {Object.entries(obj).map(([key, value], index) => (
+          <div key={index} className="text-sm mb-4">
+            <h3 className="font-bold text-lg mb-2">{key}</h3>
+            <div className="whitespace-pre-wrap">
+              {Array.isArray(value) ? (
+                <ul className="list-disc ml-5">
+                  {value.map((item, idx) => <li key={idx}>{item}</li>)}
+                </ul>
+              ) : typeof value === 'object' ? (
+                renderObjectContent(value)
+              ) : (
+                <p>{value}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
-    <section className="w-full mx-auto py-10 bg-gray-50 min-h-screen flex flex-col items-center">
+    <section className="w-full mx-auto py-5 bg-gray-50 min-h-screen flex flex-col items-center">
       <div className="mx-auto w-4/5 px-4 sm:px-6 lg:px-8">
         <div className="mx-auto w-full text-center md:max-w-2xl">
           <h2 className="text-3xl font-bold leading-tight text-black sm:text-4xl lg:text-5xl">
@@ -79,18 +106,17 @@ const MyChatGPT = () => {
         </div>
 
         {/* Chat Display */}
-        <div className="mt-8 w-full max-w-2xl bg-white rounded-lg shadow-md p-6 flex flex-col space-y-4 overflow-y-auto h-96">
+        <div
+          ref={chatContainerRef}
+          className="mt-8 w-full max-w-full bg-white rounded-lg shadow-md p-6 flex flex-col space-y-4 overflow-y-auto h-96"
+        >
           {messages.map((message, index) => (
             <div
               key={index}
-              className={`flex ${message.sender === 'User' ? 'justify-end' : 'justify-start'
-                }`}
+              className={`flex ${message.sender === 'User' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`${message.sender === 'User'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 text-black'
-                  } rounded-lg p-3 max-w-xs`}
+                className={`${message.sender === 'User' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-black'} rounded-lg p-3 max-w-xs`}
               >
                 {renderMessageContent(message)}
               </div>
@@ -106,7 +132,7 @@ const MyChatGPT = () => {
         {/* Input Form */}
         <form
           onSubmit={handleFormSubmit}
-          className="mt-4 flex w-full max-w-2xl space-x-2"
+          className="mt-4 flex w-full space-x-2"
         >
           <input
             type="text"
